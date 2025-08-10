@@ -1,0 +1,423 @@
+/* Auto-generated ProgramImpl Code */
+
+import java.util.*;              /* java Predefined*/
+import javax.baja.nre.util.*;    /* nre Predefined*/
+import javax.baja.sys.*;         /* baja Predefined*/
+import javax.baja.status.*;      /* baja Predefined*/
+import javax.baja.util.*;        /* baja Predefined*/
+import com.tridium.program.*;    /* program-rt Predefined*/
+import javax.baja.naming.*;      /* baja By Property*/
+
+public class ProgramImpl
+  extends com.tridium.program.ProgramBase
+{
+
+////////////////////////////////////////////////////////////////
+// Getters
+////////////////////////////////////////////////////////////////
+
+  public BRelTime getSwitchTime() { return (BRelTime)get("switchTime"); }
+  public BOrdList getPxIncludes() { return (BOrdList)get("pxIncludes"); }
+  public double getIndex() { return getDouble("index"); }
+  public BOrd getActivePx() { return (BOrd)get("activePx"); }
+
+////////////////////////////////////////////////////////////////
+// Setters
+////////////////////////////////////////////////////////////////
+
+  public void setSwitchTime(javax.baja.sys.BRelTime v) { set("switchTime", v); }
+  public void setPxIncludes(javax.baja.naming.BOrdList v) { set("pxIncludes", v); }
+  public void setIndex(double v) { setDouble("index", v); }
+  public void setActivePx(javax.baja.naming.BOrd v) { set("activePx", v); }
+
+////////////////////////////////////////////////////////////////
+// Program Source
+////////////////////////////////////////////////////////////////
+  
+    ////////////////////////////////////////////////////////////////
+    // Private Fields - State Management
+    ////////////////////////////////////////////////////////////////
+    
+    /**
+     * Timer ticket for scheduling the next PX switch.
+     * 
+     * KEY LEARNING: Always store timer references for proper cleanup.
+     * In enterprise systems, memory leaks from uncanceled timers can
+     * accumulate over months/years of operation, eventually causing
+     * system instability or OutOfMemoryErrors.
+     * 
+     * Clock.Ticket provides:
+     * - Cancellation capability (.cancel())
+     * - Expiration checking (.isExpired())
+     * - Framework integration (participates in station lifecycle)
+     */
+    private Clock.Ticket switchTicket = null;
+    
+    /**
+     * Internal index tracking our position in the PX playlist.
+     * 
+     * DESIGN DECISION: Why separate from the public 'index' property?
+     * - Internal state vs. external interface separation
+     * - Allows validation before exposing to external systems
+     * - Enables atomic updates (change internal first, then expose)
+     * - Protects against external modification of our state
+     */
+    private int currentIndex = 0;
+  
+    ////////////////////////////////////////////////////////////////
+    // Program Lifecycle Methods
+    ////////////////////////////////////////////////////////////////
+    
+    /**
+     * Called when the program is started or enabled.
+     * 
+     * ENTERPRISE PATTERN: Initialize-Validate-Execute
+     * 1. Set initial state
+     * 2. Validate configuration
+     * 3. Begin operation
+     * 
+     * This pattern ensures we never start in an invalid state.
+     */
+    public void onStart() throws Exception
+    {
+      // STEP 1: Initialize to known good state
+      // Always start from the beginning - predictable behavior
+      currentIndex = 0;
+      
+      // STEP 2: Validate configuration before proceeding
+      BOrdList pxList = getPxIncludes();
+      
+      /*
+       * DEFENSIVE PROGRAMMING LESSON:
+       * This null check protects against three failure scenarios:
+       * 1. Property not set (pxList == null)
+       * 2. Property set to NULL ord (pxList.isNull() == true)
+       * 3. Empty list configured (pxList.size() == 0)
+       * 
+       * In building automation, any of these can happen:
+       * - During initial configuration
+       * - When operators clear lists accidentally
+       * - During system imports/exports
+       * - Network connectivity issues
+       */
+      if (pxList != null && !pxList.isNull() && pxList.size() > 0)
+      {
+        // STEP 3: Begin operation
+        
+        /*
+         * PATTERN: Separate concerns into focused methods
+         * Rather than inline all logic here, we delegate to
+         * specialized methods. This provides:
+         * - Code reuse (same logic used in onExecute)
+         * - Single responsibility principle
+         * - Easier testing and debugging
+         * - Self-documenting code (method names describe intent)
+         */
+        updateCurrentPx();      // Show the first PX immediately
+        scheduleSwitchTimer();  // Set up automatic cycling
+      }
+      
+      /*
+       * DESIGN NOTE: What happens if the list is empty?
+       * We gracefully do nothing - no crashes, no errors.
+       * The program remains in a "waiting" state until
+       * configuration is corrected. This is better than
+       * throwing exceptions that could disable the entire program.
+       */
+    }
+    
+    /**
+     * Called by the timer system to advance to the next PX.
+     * 
+     * ARCHITECTURE INSIGHT: This method serves dual purposes:
+     * 1. Timer callback (automatic cycling)
+     * 2. Public action (manual execution via "execute" action)
+     * 
+     * This dual-purpose design enables both automated operation
+     * and manual control without code duplication.
+     */
+    public void onExecute() throws Exception
+    {
+      // RE-VALIDATE: Don't assume state hasn't changed since onStart()
+      BOrdList pxList = getPxIncludes();
+      
+      /*
+       * ENTERPRISE RELIABILITY PATTERN:
+       * Re-check conditions on every execution because:
+       * - Users can modify the playlist while running
+       * - Network issues might invalidate PX references
+       * - Station operations (save/load) might affect state
+       * - Other programs might modify our properties
+       * 
+       * Cost: A few CPU cycles
+       * Benefit: Prevents crashes that could require system restart
+       */
+      if (pxList != null && !pxList.isNull() && pxList.size() > 0)
+      {
+        /*
+         * MATHEMATICAL ELEGANCE: The modulo operator (%)
+         * 
+         * currentIndex = (currentIndex + 1) % pxList.size();
+         * 
+         * This single line handles:
+         * - Normal increment: 0→1→2→3...
+         * - Wraparound: when at last item, returns to 0
+         * - Dynamic list changes: automatically adjusts to new size
+         * 
+         * Examples with a 3-item list:
+         * (0 + 1) % 3 = 1  // Move from first to second
+         * (1 + 1) % 3 = 2  // Move from second to third  
+         * (2 + 1) % 3 = 0  // Wrap from third back to first
+         * 
+         * This eliminates the need for complex if/else wraparound logic.
+         */
+        currentIndex = (currentIndex + 1) % pxList.size();
+        
+        // Update display and schedule next cycle
+        updateCurrentPx();
+        scheduleSwitchTimer();
+      }
+      else
+      {
+        /*
+         * GRACEFUL DEGRADATION:
+         * If the playlist becomes empty during operation:
+         * 1. Clear the active display (don't show stale data)
+         * 2. Reset index to indicate "no active item"
+         * 3. Stop cycling (don't schedule another timer)
+         * 
+         * This provides clear visual feedback that configuration
+         * attention is needed, without crashing the system.
+         */
+        setActivePx(BOrd.NULL);
+        setIndex(-1);  // -1 conventionally means "no selection"
+        
+        // Note: We don't schedule another timer - cycling stops
+        // until onStart() is called again or configuration is fixed
+      }
+    }
+    
+    /**
+     * Called when the program is stopped or disabled.
+     * 
+     * RESOURCE MANAGEMENT CRITICAL PATTERN:
+     * Always clean up resources in stop methods.
+     * 
+     * Failure to cancel timers leads to:
+     * - Memory leaks (timer holds reference to our component)
+     * - Ghost execution (timer fires after component "stopped")
+     * - Resource exhaustion in long-running systems
+     * - Difficult-to-debug intermittent issues
+     */
+    public void onStop() throws Exception
+    {
+      /*
+       * DEFENSIVE CLEANUP PATTERN:
+       * Check both null and expiration status because:
+       * - switchTicket might be null (no timer ever scheduled)
+       * - switchTicket might be expired (timer already fired)
+       * - Only cancel if both conditions are false
+       * 
+       * Attempting to cancel a null or expired ticket would
+       * throw an exception, potentially masking the real
+       * reason for the stop operation.
+       */
+      if (switchTicket != null && !switchTicket.isExpired())
+      {
+        switchTicket.cancel();
+      }
+      
+      /*
+       * NULLIFICATION PATTERN:
+       * Set reference to null after cleanup.
+       * Benefits:
+       * - Prevents accidental reuse of stale reference
+       * - Enables garbage collection of ticket object
+       * - Makes debugging easier (null vs. invalid reference)
+       * - Idempotent operation (safe to call stop() multiple times)
+       */
+      switchTicket = null;
+    }
+  
+    ////////////////////////////////////////////////////////////////
+    // Private Helper Methods - Implementation Details
+    ////////////////////////////////////////////////////////////////
+    
+    /**
+     * Updates the currently displayed PX and exposes the index.
+     * 
+     * SINGLE RESPONSIBILITY: This method does exactly one thing -
+     * synchronize our internal state with the external interface.
+     * 
+     * ATOMIC OPERATION PATTERN: All related state changes happen
+     * together, preventing intermediate invalid states.
+     */
+    private void updateCurrentPx()
+    {
+      BOrdList pxList = getPxIncludes();
+      
+      /*
+       * PARANOID VALIDATION:
+       * Re-check conditions even in private methods because:
+       * - Methods might be called in different orders during debugging
+       * - Future code changes might introduce new call paths
+       * - Better safe than sorry in mission-critical systems
+       * 
+       * The performance cost is negligible compared to debugging
+       * a NullPointerException in a production building system.
+       */
+      if (pxList != null && !pxList.isNull() && pxList.size() > 0)
+      {
+        /*
+         * BOUNDS SAFETY CHECK:
+         * Protects against race conditions where:
+         * - List size changes between onExecute() and this method
+         * - Index somehow becomes invalid due to external modification
+         * - Concurrent access from multiple threads
+         * 
+         * The >= check handles the edge case where currentIndex
+         * equals the list size (would be out of bounds).
+         */
+        if (currentIndex >= pxList.size())
+        {
+          currentIndex = 0;  // Reset to safe value
+        }
+        
+        /*
+         * STATE SYNCHRONIZATION:
+         * Update both internal and external representations atomically.
+         * 
+         * Order matters here:
+         * 1. Get the BOrd reference first
+         * 2. Update external properties
+         * 
+         * If an exception occurs during setActivePx(), we haven't
+         * corrupted the index property yet.
+         */
+        BOrd currentOrd = pxList.get(currentIndex);
+        setActivePx(currentOrd);
+        setIndex(currentIndex);
+      }
+      
+      /*
+       * DESIGN NOTE: No else clause here.
+       * If validation fails, we leave the current state unchanged.
+       * This "do no harm" approach prevents clearing valid displays
+       * due to temporary configuration issues.
+       */
+    }
+    
+    /**
+     * Schedules the next automatic PX switch using Niagara's Clock service.
+     * 
+     * FRAMEWORK INTEGRATION LESSON:
+     * We use Niagara's Clock instead of java.util.Timer because:
+     * - Integrates with station lifecycle (auto-cleanup on shutdown)
+     * - Respects component enable/disable state
+     * - Provides better error handling and logging
+     * - Uses Niagara's action framework for consistency
+     * - Participates in station-wide timer management
+     */
+    private void scheduleSwitchTimer()
+    {
+      BRelTime switchTime = getSwitchTime();
+      
+      /*
+       * CONFIGURATION VALIDATION:
+       * Check that timing is valid before scheduling.
+       * 
+       * switchTime.getMillis() > 0 prevents:
+       * - Zero-delay loops (would consume 100% CPU)
+       * - Negative delays (undefined behavior)
+       * - Null timing objects (would cause NullPointerException)
+       * 
+       * If timing is invalid, we simply don't schedule - the
+       * program remains functional but stops cycling until
+       * configuration is corrected.
+       */
+      if (switchTime != null && switchTime.getMillis() > 0)
+      {
+        /*
+         * NIAGARA ACTION FRAMEWORK INTEGRATION:
+         * 
+         * getComponent().getAction("execute") retrieves the
+         * standardized "execute" action for this component.
+         * 
+         * This provides:
+         * - Consistency with Niagara UI conventions
+         * - Integration with external automation systems
+         * - Ability for users to manually trigger via Workbench
+         * - Logging and audit trail capabilities
+         * - Permission-based access control
+         */
+        Action executeAction = getComponent().getAction("execute");
+        
+        /*
+         * SELF-SCHEDULING PATTERN:
+         * Each execution schedules the next execution.
+         * 
+         * Benefits over fixed-interval timers:
+         * - Adapts to dynamic timing changes
+         * - Self-correcting if individual executions take time
+         * - Stops automatically when program stops
+         * - Handles exceptions gracefully (broken cycle stops, doesn't accumulate)
+         * 
+         * Clock.schedule parameters:
+         * 1. getComponent() - The component to invoke the action on
+         * 2. switchTime - Delay before execution
+         * 3. executeAction - The action to invoke (calls onExecute)
+         * 4. null - No additional parameters needed
+         */
+        switchTicket = Clock.schedule(getComponent(), switchTime, executeAction, null);
+      }
+      
+      /*
+       * DESIGN INSIGHT: Why not schedule in a loop?
+       * 
+       * Alternative approach (DON'T DO THIS):
+       * while (running) {
+       *   Thread.sleep(switchTime);
+       *   onExecute();
+       * }
+       * 
+       * Problems with loop approach:
+       * - Blocks thread (prevents other operations)
+       * - Hard to stop cleanly
+       * - Doesn't integrate with Niagara lifecycle
+       * - Can't handle dynamic timing changes
+       * - Exception in onExecute() kills entire loop
+       * 
+       * The self-scheduling pattern elegantly avoids all these issues.
+       */
+    }
+  
+  /*
+   * OVERALL ARCHITECTURE LESSONS:
+   * 
+   * 1. DEFENSIVE PROGRAMMING: Assume anything that can go wrong, will.
+   *    Validate inputs, check bounds, handle nulls gracefully.
+   * 
+   * 2. RESOURCE MANAGEMENT: Acquire resources carefully, release them reliably.
+   *    Use try-finally patterns or framework cleanup methods.
+   * 
+   * 3. SEPARATION OF CONCERNS: Each method has one job and does it well.
+   *    Private methods enable code reuse without duplication.
+   * 
+   * 4. FRAMEWORK INTEGRATION: Use the framework's patterns and services.
+   *    Don't fight the framework - work with it for better reliability.
+   * 
+   * 5. GRACEFUL DEGRADATION: When things go wrong, fail safely.
+   *    Better to show nothing than to crash the entire system.
+   * 
+   * 6. ATOMIC OPERATIONS: Related state changes happen together.
+   *    Prevents intermediate invalid states that confuse users.
+   * 
+   * 7. SELF-DOCUMENTING CODE: Method names and structure tell the story.
+   *    Comments explain the "why", code shows the "what".
+   * 
+   * This program demonstrates that simple, boring, predictable code
+   * is often the best code for enterprise systems. Clever algorithms
+   * and complex patterns have their place, but reliability trumps
+   * cleverness every time in building automation.
+   */
+}
