@@ -1,0 +1,377 @@
+/* Auto-generated ProgramImpl Code */
+
+import java.util.*;              /* java Predefined*/
+import javax.baja.nre.util.*;    /* nre Predefined*/
+import javax.baja.sys.*;         /* baja Predefined*/
+import javax.baja.status.*;      /* baja Predefined*/
+import javax.baja.util.*;        /* baja Predefined*/
+import com.tridium.program.*;    /* program-rt Predefined*/
+import javax.baja.naming.*;      /* baja User Defined*/
+import javax.baja.bacnet.export.*; /* bacnet-rt User Defined*/
+import javax.baja.collection.*;  /* baja User Defined*/
+
+public class ProgramImpl
+  extends com.tridium.program.ProgramBase
+{
+
+////////////////////////////////////////////////////////////////
+// Getters
+////////////////////////////////////////////////////////////////
+
+  public String getSyncResults() { return getString("syncResults"); }
+
+////////////////////////////////////////////////////////////////
+// Setters
+////////////////////////////////////////////////////////////////
+
+  public void setSyncResults(String v) { setString("syncResults", v); }
+
+////////////////////////////////////////////////////////////////
+// Program Source
+////////////////////////////////////////////////////////////////
+
+  /**
+   * BACnet ObjectName Synchronization Program
+   * 
+   * ARCHITECTURAL INSIGHT: This program demonstrates a common pattern in building automation
+   * systems where human-readable names (objectName) need to be synchronized with system
+   * identifiers (component names). This addresses the frequent disconnect between what
+   * field technicians name devices and what the software system can use as valid identifiers.
+   * 
+   * BAJA FRAMEWORK CONTEXT: Uses Object Resolution Descriptors (ORDs) to navigate and
+   * query the distributed object hierarchy that represents the building automation system.
+   */
+  
+  public void onStart() throws Exception
+  {
+    // DESIGN PATTERN: Initialization with user feedback
+    // Always provide immediate feedback to users about system state - this builds confidence
+    // that the system is responsive and ready to work
+    setSyncResults("Ready to sync");
+  }
+  
+  public void onExecute() throws Exception
+  {
+    // EDUCATIONAL NOTE: Console logging serves multiple purposes:
+    // 1. Debugging during development
+    // 2. Audit trail for system administrators
+    // 3. Progress indication for long-running operations
+    System.out.println("BACnet ObjectName Sync Program started");
+    System.out.println("Starting BACnet ObjectName synchronization...");
+    
+    // ARCHITECTURAL DECISION: Single responsibility - delegate the core work
+    // to a focused method. This makes testing, debugging, and maintenance easier.
+    syncBacnetObjectNames();
+  }
+  
+  public void onStop() throws Exception
+  {
+    // LIFECYCLE MANAGEMENT: Always provide clean shutdown logging
+    // This helps administrators understand system state during maintenance windows
+    System.out.println("BACnet ObjectName Sync Program stopped");
+  }
+  
+  /**
+   * EDUCATIONAL FOCUS: This method demonstrates several critical enterprise programming patterns:
+   * 1. Database query abstraction (BQL)
+   * 2. Result processing with error handling
+   * 3. Statistical reporting for operations teams
+   * 4. Defensive programming against unexpected data
+   */
+  private void syncBacnetObjectNames() throws Exception
+  {
+    // METRICS PATTERN: Always track what you're doing at scale
+    // These counters enable reporting, performance analysis, and capacity planning
+    int updateCount = 0;
+    int totalCount = 0;
+    
+    try {
+      // BQL (Baja Query Language) INSIGHT: Domain-specific query languages like BQL
+      // provide abstraction over complex object hierarchies. This query finds all
+      // BACnet point descriptors across the entire station hierarchy.
+      String bqlQuery = "station:|slot:/|bql:select * from bacnet:BacnetPointDescriptor";
+      System.out.println("Executing BQL query: " + bqlQuery);
+      
+      // OBJECT RESOLUTION PATTERN: BOrd (Baja Object Resolution Descriptor) provides
+      // a standardized way to locate and retrieve objects within the Baja framework.
+      // This abstraction allows the system to resolve complex object paths and queries
+      // into actual object references, handling the complexity of distributed object lookups.
+      BOrd queryOrd = BOrd.make(bqlQuery);
+      BObject queryResult = queryOrd.get();
+      
+      // DEFENSIVE PROGRAMMING: Always check for null results from external systems
+      // Database queries, network calls, and file operations can fail in numerous ways
+      if (queryResult == null) {
+        System.out.println("BQL query returned no results");
+        setSyncResults("No BACnet descriptors found");
+        return; // Early return prevents unnecessary processing
+      }
+      
+      // TYPE SAFETY: Runtime type checking in dynamically-typed query results
+      // This is common when working with query languages that return generic objects
+      if (queryResult instanceof BITable) {
+        BITable resultTable = (BITable) queryResult;
+        updateCount = processBqlResults(resultTable);
+        totalCount = getTotalRowCount(resultTable);
+      } else {
+        // ERROR HANDLING: Provide meaningful error messages that help debugging
+        System.out.println("Unexpected BQL result type: " + queryResult.getClass().getSimpleName());
+        setSyncResults("Query returned unexpected result type");
+        return;
+      }
+      
+      // OPERATIONS INSIGHT: Detailed logging helps with capacity planning and troubleshooting
+      // Operations teams need to understand both what happened and the scale of the operation
+      System.out.println("BACnet sync complete:");
+      System.out.println("  Total descriptors found: " + totalCount);
+      System.out.println("  Descriptors updated: " + updateCount);
+      
+      // USER FEEDBACK: Concise summary for end users who don't need technical details
+      setSyncResults("Updated " + updateCount + " of " + totalCount + " descriptors");
+      
+    } catch (Exception e) {
+      // COMPREHENSIVE ERROR HANDLING: Log, report to user, preserve stack trace, and re-throw
+      // This multi-layered approach serves different audiences:
+      // - System logs for developers
+      // - User feedback for operators
+      // - Stack traces for debugging
+      // - Re-throwing preserves the exception contract for callers
+      System.out.println("Error during BACnet sync: " + e.getMessage());
+      setSyncResults("Error: " + e.getMessage());
+      e.printStackTrace();
+      throw e;
+    }
+  }
+  
+  /**
+   * ITERATOR PATTERN WITH RESOURCE MANAGEMENT
+   * 
+   * EDUCATIONAL NOTE: This method demonstrates proper cursor management, which is
+   * critical when working with large datasets. Cursors are like database connections -
+   * they must be properly closed to prevent resource leaks.
+   */
+  private int processBqlResults(BITable resultTable) throws Exception
+  {
+    int updateCount = 0;
+    
+    // RESOURCE MANAGEMENT: Get cursor reference for proper cleanup
+    TableCursor cursor = resultTable.cursor();
+    System.out.println("Processing BQL results...");
+    
+    try {
+      // ITERATOR PATTERN: Process results one at a time to minimize memory usage
+      // This approach scales to tables with millions of rows
+      while (cursor.next()) {
+        Row row = cursor.row();
+        BObject rowObject = (BObject) row.rowObject();
+        
+        // POLYMORPHISM: Use instanceof for type-safe casting
+        // This is necessary when working with heterogeneous query results
+        if (rowObject instanceof BBacnetPointDescriptor) {
+          BBacnetPointDescriptor descriptor = (BBacnetPointDescriptor) rowObject;
+          if (updateDescriptorObjectName(descriptor)) {
+            updateCount++;
+          }
+        } else {
+          // DEFENSIVE LOGGING: Alert about unexpected data without failing
+          // This helps identify data quality issues or query problems
+          System.out.println("Skipping non-descriptor result: " + 
+            (rowObject != null ? rowObject.getClass().getSimpleName() : "null"));
+        }
+      }
+    } finally {
+      // CRITICAL RESOURCE CLEANUP: Always close cursors in finally block
+      // This ensures resources are freed even if exceptions occur
+      cursor.close();
+    }
+    
+    return updateCount;
+  }
+  
+  /**
+   * SEPARATION OF CONCERNS: Counting is separate from processing
+   * 
+   * PERFORMANCE NOTE: This method demonstrates a trade-off between code simplicity
+   * and performance. We iterate twice (once to count, once to process) for cleaner
+   * code structure, accepting the performance cost for better maintainability.
+   */
+  private int getTotalRowCount(BITable resultTable)
+  {
+    int count = 0;
+    TableCursor cursor = resultTable.cursor();
+    try {
+      // SIMPLE COUNTING LOOP: Focus on single responsibility
+      while (cursor.next()) {
+        count++;
+      }
+    } catch (Exception e) {
+      // NON-CRITICAL ERROR HANDLING: Log but don't fail the entire operation
+      // Counting is nice-to-have for reporting, but not essential for functionality
+      System.out.println("Error counting rows: " + e.getMessage());
+    } finally {
+      // DEFENSIVE RESOURCE CLEANUP: Handle cleanup exceptions gracefully
+      try { cursor.close(); } catch (Exception e) { }
+    }
+    return count;
+  }
+  
+  /**
+   * BUSINESS LOGIC CORE: This method encapsulates the domain-specific rules
+   * 
+   * EDUCATIONAL INSIGHT: This demonstrates how to handle the common scenario where
+   * external system names don't conform to internal naming conventions. The method
+   * shows validation, transformation, and the complexities of object relationships
+   * in component-based architectures.
+   */
+  private boolean updateDescriptorObjectName(BBacnetPointDescriptor descriptor) throws Exception
+  {
+    try {
+      // DATA EXTRACTION: Get current state before making changes
+      String currentComponentName = descriptor.getName();
+      String objectName = descriptor.getObjectName();
+      
+      // VALIDATION: Check for missing or empty data
+      // Building automation systems often have incomplete data due to configuration errors
+      if (objectName == null || objectName.trim().isEmpty()) {
+        System.out.println("Skipping " + descriptor.getName() + " - no objectName");
+        return false; // Return false indicates no update was performed
+      }
+      
+      // IDEMPOTENCY: Don't perform unnecessary updates
+      // This optimization reduces database load and prevents unnecessary change notifications
+      if (objectName.equals(currentComponentName)) {
+        System.out.println("Skipping " + descriptor.getName() + " - already synchronized");
+        return false;
+      }
+      
+      // DATA TRANSFORMATION: Convert external names to valid internal identifiers
+      String validName = makeValidComponentName(objectName);
+      if (!validName.equals(objectName)) {
+        // TRANSPARENCY: Log when transformations occur so administrators understand changes
+        System.out.println("ObjectName '" + objectName + "' converted to valid component name '" + validName + "'");
+      }
+      
+      // OBJECT RELATIONSHIP NAVIGATION: Walk up the component hierarchy
+      // This demonstrates the complexity of component-based architectures where
+      // objects exist within parent-child relationships
+      BComplex parentComplex = descriptor.getParent();
+      if (!(parentComplex instanceof BComponent)) {
+        System.out.println("Cannot rename " + descriptor.getName() + " - parent is not a BComponent");
+        return false;
+      }
+      
+      BComponent parent = (BComponent) parentComplex;
+      
+      // INTROSPECTION: Find which property holds this descriptor
+      // This is necessary because components can have multiple properties of the same type
+      Property descriptorProperty = findDescriptorProperty(parent, descriptor);
+      if (descriptorProperty == null) {
+        System.out.println("Cannot find property for " + descriptor.getName() + " in parent " + parent.getName());
+        return false;
+      }
+      
+      // ATOMIC OPERATION: Perform the actual rename
+      // This is the core business operation - changing the component's identity
+      parent.rename(descriptorProperty, validName);
+      
+      // AUDIT LOGGING: Record successful changes for troubleshooting and compliance
+      System.out.println("Renamed: " + currentComponentName + " -> " + validName + " (in " + parent.getName() + ")");
+      
+      return true; // Successful update
+      
+    } catch (Exception e) {
+      // ERROR ISOLATION: Log errors but don't let one failure stop the entire sync
+      // This is crucial for batch operations - one bad record shouldn't break everything
+      System.out.println("Error renaming " + descriptor.getName() + ": " + e.getMessage());
+      return false;
+    }
+  }
+  
+  /**
+   * REFLECTION AND INTROSPECTION: Finding objects within component hierarchies
+   * 
+   * ARCHITECTURAL INSIGHT: This method shows the complexity of component-based systems
+   * where objects are stored as properties and must be located through reflection.
+   * This is common in frameworks like Spring, OSGi, and building automation systems.
+   */
+  private Property findDescriptorProperty(BComponent parent, BBacnetPointDescriptor descriptor)
+  {
+    try {
+      // REFLECTION: Get all properties of the parent component
+      Property[] allProperties = parent.getPropertiesArray();
+      
+      // LINEAR SEARCH: Check each property to find our descriptor
+      for (Property property : allProperties) {
+        try {
+          BValue propertyValue = parent.get(property);
+          
+          // DUAL COMPARISON STRATEGY: Try reference equality first, then name matching
+          // Reference equality is faster and more reliable, but name matching provides
+          // a fallback for cases where object references might not be identical
+          if (propertyValue == descriptor || 
+              (propertyValue instanceof BBacnetPointDescriptor && 
+               ((BBacnetPointDescriptor) propertyValue).getName().equals(descriptor.getName()))) {
+            return property;
+          }
+          
+        } catch (Exception e) {
+          // CONTINUE ON ERROR: Don't let one property access failure stop the search
+          // Some properties might throw exceptions if they're not properly initialized
+        }
+      }
+      
+      return null; // Not found
+      
+    } catch (Exception e) {
+      // GRACEFUL DEGRADATION: Return null rather than throwing exceptions
+      // This allows the calling code to handle the "not found" case cleanly
+      return null;
+    }
+  }
+  
+  /**
+   * STRING SANITIZATION: Converting arbitrary text to valid system identifiers
+   * 
+   * EDUCATIONAL VALUE: This method demonstrates the common need to transform
+   * human-readable names into system-valid identifiers. This pattern appears
+   * in URL slugs, database column names, variable names, and file names.
+   */
+  private String makeValidComponentName(String name)
+  {
+    // INPUT VALIDATION: Handle edge cases first
+    if (name == null || name.trim().isEmpty()) {
+      return "unnamed"; // Provide a reasonable default
+    }
+    
+    // NORMALIZATION: Start with trimmed input
+    String validName = name.trim();
+    
+    // CHARACTER REPLACEMENT: Convert problematic characters to underscores
+    // This regex handles common punctuation that appears in building automation names
+    validName = validName.replaceAll("[\\s\\-\\.\\(\\)\\[\\]\\{\\}]+", "_");
+    
+    // CHARACTER FILTERING: Remove anything that's not alphanumeric or underscore
+    // This ensures the result will be valid in most programming language contexts
+    validName = validName.replaceAll("[^a-zA-Z0-9_]", "");
+    
+    // IDENTIFIER RULES: Ensure valid identifier syntax (can't start with digit)
+    // This is a common requirement in programming languages and component frameworks
+    if (validName.length() > 0 && Character.isDigit(validName.charAt(0))) {
+      validName = "_" + validName;
+    }
+    
+    // FALLBACK HANDLING: Generate unique name if nothing is left after cleaning
+    // Using timestamp ensures uniqueness across multiple operations
+    if (validName.isEmpty()) {
+      validName = "unnamed_" + System.currentTimeMillis();
+    }
+    
+    // LENGTH LIMITATION: Prevent excessively long identifiers
+    // Many systems have limits on identifier length; 50 characters is reasonable
+    if (validName.length() > 50) {
+      validName = validName.substring(0, 50);
+    }
+    
+    return validName;
+  }
+}
