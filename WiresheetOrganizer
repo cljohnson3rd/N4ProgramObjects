@@ -1,0 +1,432 @@
+/* Auto-generated ProgramImpl Code */
+
+import java.util.*;              /* java Predefined*/
+import javax.baja.nre.util.*;    /* nre Predefined*/
+import javax.baja.sys.*;         /* baja Predefined*/
+import javax.baja.status.*;      /* baja Predefined*/
+import javax.baja.util.*;        /* baja Predefined*/
+import com.tridium.program.*;    /* program-rt Predefined*/
+import javax.baja.collection.*;  /* baja User Defined*/
+import javax.baja.naming.*;      /* baja By Property*/
+
+public class ProgramImpl
+  extends com.tridium.program.ProgramBase
+{
+
+////////////////////////////////////////////////////////////////
+// Getters
+////////////////////////////////////////////////////////////////
+
+  public BOrd getSource() { return (BOrd)get("source"); }
+  public BOrd getTarget() { return (BOrd)get("target"); }
+
+////////////////////////////////////////////////////////////////
+// Setters
+////////////////////////////////////////////////////////////////
+
+  public void setSource(javax.baja.naming.BOrd v) { set("source", v); }
+  public void setTarget(javax.baja.naming.BOrd v) { set("target", v); }
+
+////////////////////////////////////////////////////////////////
+// Program Source
+////////////////////////////////////////////////////////////////
+
+  /**
+   * ========================================================================
+   * WIRESHEET ANNOTATION COPY TOOL
+   * ========================================================================
+   * 
+   * PURPOSE: This program copies Wiresheet annotations from a template 
+   * component to multiple target components in a table. This is useful when 
+   * you have a "master" component with properly configured wiresheet annotations 
+   * and want to apply the same positioning/settings to many similar components.
+   * 
+   * WHAT IT DOES:
+   * 1. Reads wiresheet annotations from a source/template component
+   * 2. Finds all matching component names in target folders 
+   * 3. Copies the wiresheet annotation settings to each matching target component
+   * 
+   * TYPICAL USE CASE: 
+   * You have 50 VAV boxes that need the same wiresheet annotation settings. Instead 
+   * of manually configuring each one, configure one "template" VAV and let 
+   * this program copy the settings to all the others automatically.
+   * 
+   * WIRESHEET ANNOTATIONS EXPLAINED:
+   * - P coordinate: X position on wiresheet grid
+   * - Q coordinate: Y position on wiresheet grid  
+   * - Wixel Width: Component width in wiresheet pixels
+   * - Wixel Height: Component height in wiresheet pixels (optional)
+   * 
+   * PROGRAM PROPERTIES REQUIRED:
+   * - "source" (BOrd): Points to template component with wiresheet annotations
+   * - "target" (BOrd): Points to table containing components to update
+   * ========================================================================
+   */
+  
+  /**
+   * MAIN EXECUTION METHOD
+   * This is the entry point that gets called when the program runs
+   * Orchestrates the entire wiresheet annotation copy process
+   */
+  public void onExecute() throws Exception {
+    System.out.println("=== Starting Wiresheet Annotation Copy Process ===");
+  
+    // STEP 1: Get references to template and destination from program properties
+    // The "source" should point to your template component with configured annotations
+    // The "target" should point to a table containing folders with components to update
+    BOrd templateComponentOrd = (BOrd) getSource();
+    BOrd destinationTableOrd = getTarget();
+    
+    // STEP 2: Validate that we have both template and destination configured
+    if (templateComponentOrd == null || destinationTableOrd == null) {
+      System.out.println("ERROR: Template component or destination table is null - check program configuration");
+      return;
+    }
+    
+    // STEP 3: Resolve the ORDs to actual components with error handling
+    BComponent masterTemplateComponent = resolveComponent(templateComponentOrd, "master template component");
+    BITable destinationComponentsTable = resolveTable(destinationTableOrd, "destination components table");
+    
+    if (masterTemplateComponent == null || destinationComponentsTable == null) {
+      return; // Error already logged in resolve methods
+    }
+    
+    System.out.println("✓ Successfully resolved template and destination components");
+    
+    // STEP 4: Build the annotation template from master component
+    // This creates a lookup map: componentName -> BWsAnnotation
+    Map<String, BWsAnnotation> wsAnnotationLibrary = buildAnnotationLibrary(masterTemplateComponent);
+    
+    if (wsAnnotationLibrary.isEmpty()) {
+      System.out.println("WARNING: No Wiresheet annotations found in template component - nothing to copy");
+      return;
+    }
+  
+    // STEP 5: Apply the template to all destination components
+    // This loops through the table and updates matching components
+    int totalComponentsUpdated = applyAnnotationsToDestinationComponents(destinationComponentsTable, wsAnnotationLibrary);
+    
+    System.out.println("=== COMPLETED: Successfully updated " + totalComponentsUpdated + " components ===");
+  }
+  
+  /**
+   * UTILITY METHOD: Safely resolve a BOrd reference to a BComponent
+   * 
+   * WHY WE NEED THIS: BOrd.resolve() can fail if the path is invalid,
+   * so we wrap it in error handling to provide clear feedback to the user
+   * 
+   * @param componentReference The BOrd reference to resolve
+   * @param componentDescription Human-readable description for error messages
+   * @return The resolved BComponent, or null if resolution failed
+   */
+  private BComponent resolveComponent(BOrd componentReference, String componentDescription) {
+    try {
+      BComponent resolvedComponent = (BComponent) componentReference.resolve().get();
+      System.out.println("✓ Resolved " + componentDescription + ": " + resolvedComponent.getName());
+      return resolvedComponent;
+    } catch (Exception resolutionError) {
+      System.out.println("✗ Failed to resolve " + componentDescription + ": " + resolutionError.getMessage());
+      System.out.println("  Check that the ORD path is correct: " + componentReference.toString());
+      return null;
+    }
+  }
+  
+  /**
+   * UTILITY METHOD: Safely resolve a BOrd reference to a BITable
+   * 
+   * WHAT'S A BITABLE: In Niagara, tables are used to display collections
+   * of components. Our target should be a table containing folders/components
+   * that we want to update with wiresheet annotations.
+   * 
+   * @param tableReference The BOrd reference to resolve
+   * @param tableDescription Human-readable description for error messages
+   * @return The resolved BITable, or null if resolution failed
+   */
+  private BITable resolveTable(BOrd tableReference, String tableDescription) {
+    try {
+      BITable resolvedTable = (BITable) tableReference.resolve().get();
+      System.out.println("✓ Resolved " + tableDescription + " table");
+      return resolvedTable;
+    } catch (Exception resolutionError) {
+      System.out.println("✗ Failed to resolve " + tableDescription + ": " + resolutionError.getMessage());
+      System.out.println("  Check that the target points to a valid table component");
+      return null;
+    }
+  }
+  
+  /**
+   * ANNOTATION LIBRARY BUILDING METHOD
+   * 
+   * PURPOSE: Scans the template component and extracts all wiresheet annotations
+   * from its child components, creating a "library" that we can apply elsewhere
+   * 
+   * HOW IT WORKS:
+   * 1. Gets all child components from the template
+   * 2. For each child, tries to get its "wsAnnotation" property
+   * 3. Builds a HashMap where key=componentName, value=BWsAnnotation
+   * 
+   * PERFORMANCE NOTE: We pre-size the HashMap to avoid rehashing as it grows
+   * Formula: capacity = expectedSize * 4/3 + 1 (accounts for HashMap load factor)
+   * 
+   * @param masterTemplateComponent The template component to read annotations from
+   * @return Map of component names to their wiresheet annotations
+   */
+  private Map<String, BWsAnnotation> buildAnnotationLibrary(BComponent masterTemplateComponent) {
+    System.out.println("Building Wiresheet annotation library from: " + masterTemplateComponent.getName());
+    
+    // Get all child components that might have wiresheet annotations
+    BComponent[] templateChildComponents = masterTemplateComponent.getChildComponents();
+    
+    // Create HashMap with optimal initial capacity to minimize rehashing
+    // Formula: capacity = expectedSize * 4/3 + 1 (accounts for HashMap load factor of 0.75)
+    Map<String, BWsAnnotation> annotationLibrary = new HashMap<String, BWsAnnotation>(templateChildComponents.length * 4 / 3 + 1);
+    
+    int annotationsFoundCount = 0;
+    
+    // Loop through each child component looking for wiresheet annotations
+    for (BComponent templateChildComponent : templateChildComponents) {
+      try {
+        // Try to get the wsAnnotation property from this component
+        // This property contains P,Q coordinates and wixel dimensions for wiresheet placement
+        BWsAnnotation childAnnotation = (BWsAnnotation) templateChildComponent.get("wsAnnotation");
+        
+        if (childAnnotation != null) {
+          // Found a valid annotation - add it to our library
+          String componentName = templateChildComponent.getName();
+          annotationLibrary.put(componentName, childAnnotation);
+          annotationsFoundCount++;
+          System.out.println("  ✓ Found Wiresheet annotation for: " + componentName);
+        }
+      } catch (Exception annotationAccessError) {
+        // This is normal - not all components will have wiresheet annotations
+        // We provide feedback about which components are being skipped
+        System.out.println("  - Skipping " + templateChildComponent.getName() + " (no wsAnnotation property)");
+      }
+    }
+    
+    System.out.println("✓ Built annotation library with " + annotationsFoundCount + " Wiresheet annotations from " + templateChildComponents.length + " components");
+    return annotationLibrary;
+  }
+  
+  /**
+   * DESTINATION PROCESSING METHOD
+   * 
+   * PURPOSE: Loops through the destination table and applies our annotation library
+   * to each folder/component that matches names in our library
+   * 
+   * TABLE CURSOR USAGE: Niagara tables use cursors for iteration, similar to database cursors
+   * We must properly close the cursor when done to avoid resource leaks in the Niagara runtime
+   * 
+   * @param destinationComponentsTable The table containing components to update
+   * @param wsAnnotationLibrary The annotation library we built from the template
+   * @return Total number of components successfully updated
+   */
+  private int applyAnnotationsToDestinationComponents(BITable destinationComponentsTable, Map<String, BWsAnnotation> wsAnnotationLibrary) {
+    System.out.println("Applying Wiresheet annotations to destination components...");
+    
+    // Create a cursor to iterate through the table rows
+    TableCursor<BComponent> tableRowCursor = destinationComponentsTable.cursor();
+    int totalComponentsProcessed = 0;
+    
+    try {
+      // Loop through each row in the destination table
+      while (tableRowCursor.next()) {
+        BComponent destinationFolder = tableRowCursor.get();
+        
+        if (destinationFolder != null) {
+          // Process this folder and count how many components we updated
+          int componentsUpdatedInFolder = processDestinationFolder(destinationFolder, wsAnnotationLibrary);
+          totalComponentsProcessed += componentsUpdatedInFolder;
+        }
+      }
+    } finally {
+      // CRITICAL: Always close the cursor to prevent resource leaks
+      // This runs even if an exception occurs above (finally block)
+      try {
+        tableRowCursor.close();
+      } catch (Exception cursorCloseError) {
+        System.out.println("WARNING: Failed to close table cursor: " + cursorCloseError.getMessage());
+      }
+    }
+    
+    return totalComponentsProcessed;
+  }
+  
+  /**
+   * DESTINATION FOLDER PROCESSING METHOD
+   * 
+   * PURPOSE: Takes a single destination folder/component and applies annotations 
+   * to its children that match names in our annotation library
+   * 
+   * MATCHING LOGIC: We match by component name. If a destination component has the same
+   * name as a component in our template library, we copy the wiresheet annotation.
+   * This means component naming must be consistent between template and destinations.
+   * 
+   * @param destinationFolder The folder containing components to potentially update
+   * @param wsAnnotationLibrary The annotation library with component names and their annotations
+   * @return Number of components successfully updated in this folder
+   */
+  private int processDestinationFolder(BComponent destinationFolder, Map<String, BWsAnnotation> wsAnnotationLibrary) {
+    System.out.println("Processing destination folder: " + destinationFolder.getName());
+    
+    // Get all child components in this destination folder
+    BComponent[] destinationChildComponents = destinationFolder.getChildComponents();
+    int componentsSuccessfullyUpdated = 0;
+    
+    // Check each child component to see if we have a library annotation for it
+    for (BComponent destinationChildComponent : destinationChildComponents) {
+      if (applyAnnotationToDestinationComponent(destinationChildComponent, wsAnnotationLibrary)) {
+        componentsSuccessfullyUpdated++;
+      }
+    }
+    
+    // Provide feedback about the results for this folder
+    if (componentsSuccessfullyUpdated > 0) {
+      System.out.println("  ✓ Applied " + componentsSuccessfullyUpdated + " annotations in folder: " + destinationFolder.getName());
+    } else {
+      System.out.println("  - No matching components found in folder: " + destinationFolder.getName());
+    }
+    
+    return componentsSuccessfullyUpdated;
+  }
+  
+  /**
+   * INDIVIDUAL COMPONENT ANNOTATION METHOD
+   * 
+   * PURPOSE: Applies a wiresheet annotation to a single destination component if we have a template for it
+   * 
+   * CLONING STRATEGY: We clone the annotation rather than reusing the same object to avoid
+   * reference sharing issues that could cause problems later in the Niagara runtime
+   * 
+   * @param destinationComponent The component to potentially update
+   * @param wsAnnotationLibrary The annotation library to look up annotations from
+   * @return true if annotation was successfully applied, false otherwise
+   */
+  private boolean applyAnnotationToDestinationComponent(BComponent destinationComponent, Map<String, BWsAnnotation> wsAnnotationLibrary) {
+    String destinationComponentName = destinationComponent.getName();
+    
+    // Look up this component name in our annotation library
+    BWsAnnotation libraryAnnotation = wsAnnotationLibrary.get(destinationComponentName);
+    
+    if (libraryAnnotation == null) {
+      // No annotation template for this component - this is normal, not an error
+      // Many components won't have matching names, and that's expected
+      return false;
+    }
+    
+    try {
+      // Clone the annotation to create a new instance for this component
+      // This prevents issues with multiple components sharing the same annotation object
+      BWsAnnotation clonedAnnotationForDestination = cloneWsAnnotation(libraryAnnotation);
+      
+      // Try to apply the annotation to the destination component
+      boolean annotationAppliedSuccessfully = setOrAddAnnotationToComponent(destinationComponent, clonedAnnotationForDestination);
+      
+      if (annotationAppliedSuccessfully) {
+        System.out.println("    ✓ Applied Wiresheet annotation to: " + destinationComponentName);
+      }
+      
+      return annotationAppliedSuccessfully;
+      
+    } catch (Exception annotationApplicationError) {
+      System.out.println("    ✗ Failed to apply annotation to " + destinationComponentName + ": " + annotationApplicationError.getMessage());
+      return false;
+    }
+  }
+  
+  /**
+   * WIRESHEET ANNOTATION CLONING METHOD
+   * 
+   * PURPOSE: Creates a copy of a wiresheet annotation to avoid object reference sharing
+   * 
+   * HOW WIRESHEET ANNOTATIONS WORK: They contain P, Q coordinates that define positioning
+   * on Niagara's wiresheet grid, plus wixel dimensions for component sizing.
+   * We encode to string, parse the coordinates, and create a new instance.
+   * 
+   * STRING FORMAT: The encoded string is "p,q,wixelWidth" or "p,q,wixelWidth,wixelHeight"
+   * - P: X coordinate on wiresheet grid
+   * - Q: Y coordinate on wiresheet grid  
+   * - wixelWidth: Component width in wiresheet pixels
+   * - wixelHeight: Component height in wiresheet pixels (optional)
+   * 
+   * @param originalAnnotation The original annotation to clone
+   * @return A new BWsAnnotation instance with the same coordinates and dimensions
+   * @throws Exception if the annotation format is invalid
+   */
+  private BWsAnnotation cloneWsAnnotation(BWsAnnotation originalAnnotation) throws Exception {
+    // Convert annotation to string format (e.g., "100,200,8" or "100,200,8,4")
+    String annotationCoordinateString = originalAnnotation.encodeToString();
+    
+    // Split into individual coordinate/dimension components
+    String[] coordinateComponents = annotationCoordinateString.split(",");
+    
+    // Validate that we have the correct number of components
+    // Should be 3 (p,q,wixelWidth) or 4 (p,q,wixelWidth,wixelHeight)
+    if (coordinateComponents.length < 3 || coordinateComponents.length > 4) {
+      throw new IllegalArgumentException("Invalid Wiresheet annotation coordinate format: " + annotationCoordinateString + " (expected p,q,wixelWidth[,wixelHeight])");
+    }
+    
+    // Create new annotation instance with the same coordinates and dimensions
+    // We use the 3-parameter factory method which handles the most common case
+    return BWsAnnotation.make(
+      Integer.parseInt(coordinateComponents[0]), // P coordinate (X position)
+      Integer.parseInt(coordinateComponents[1]), // Q coordinate (Y position)  
+      Integer.parseInt(coordinateComponents[2])  // Wixel width
+    );
+    // Note: We ignore the optional 4th parameter (wixelHeight) for simplicity
+    // The BWsAnnotation.make() method will use default height if not specified
+  }
+  
+  /**
+   * COMPONENT ANNOTATION SETTER METHOD
+   * 
+   * PURPOSE: Attempts to set or add a wiresheet annotation to a destination component
+   * 
+   * TWO-STEP PROCESS:
+   * 1. First try to SET the annotation (assumes the property already exists)
+   * 2. If that fails, try to ADD the annotation (creates the property)
+   * 
+   * WHY TWO STEPS: Some components already have wsAnnotation properties, others don't.
+   * We handle both cases gracefully to maximize compatibility across different component types.
+   * 
+   * @param destinationComponent The component to update
+   * @param newAnnotation The annotation to apply
+   * @return true if successful, false if both set and add operations failed
+   */
+  private boolean setOrAddAnnotationToComponent(BComponent destinationComponent, BWsAnnotation newAnnotation) {
+    String destinationComponentName = destinationComponent.getName();
+    
+    try {
+      // ATTEMPT 1: Try to set the existing wsAnnotation property
+      // This is the most common case - component already has the property
+      destinationComponent.set(BWsAnnotation.PROPERTY_NAME, newAnnotation);
+      return true;
+      
+    } catch (NoSuchSlotException noExistingSlotError) {
+      // The wsAnnotation property doesn't exist yet on this component
+      
+      try {
+        // ATTEMPT 2: Try to add the wsAnnotation property
+        // This creates a new property slot on the component
+        destinationComponent.add(BWsAnnotation.PROPERTY_NAME, newAnnotation);
+        System.out.println("      + Added new wsAnnotation property to " + destinationComponentName);
+        return true;
+        
+      } catch (Exception cannotAddSlotError) {
+        // Both set and add failed - this component can't accept wiresheet annotations
+        // This might happen with read-only components or incompatible component types
+        System.out.println("      ✗ Cannot set or add Wiresheet annotation to " + destinationComponentName);
+        System.out.println("        Set error: " + noExistingSlotError.getMessage());
+        System.out.println("        Add error: " + cannotAddSlotError.getMessage());
+        return false;
+      }
+      
+    } catch (Exception generalSetError) {
+      // Some other error occurred during the set operation
+      // This could be a type mismatch, security restriction, etc.
+      System.out.println("      ✗ Error setting Wiresheet annotation for " + destinationComponentName + ": " + generalSetError.getMessage());
+      return false;
+    }
+  }
+}
+
