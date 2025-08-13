@@ -1,0 +1,140 @@
+/* Auto-generated ProgramImpl Code */
+
+import java.util.*;              /* java Predefined*/
+import javax.baja.nre.util.*;    /* nre Predefined*/
+import javax.baja.sys.*;         /* baja Predefined*/
+import javax.baja.status.*;      /* baja Predefined*/
+import javax.baja.util.*;        /* baja Predefined*/
+import com.tridium.program.*;    /* program-rt Predefined*/
+import javax.baja.naming.*;      /* baja User Defined*/
+
+public class ProgramImpl
+  extends com.tridium.program.ProgramBase
+{
+
+////////////////////////////////////////////////////////////////
+// Getters
+////////////////////////////////////////////////////////////////
+
+  public double getTotalDevices() { return getDouble("totalDevices"); }
+  public double getDevicesDown() { return getDouble("devicesDown"); }
+  public double getOperationalDevices() { return getDouble("operationalDevices"); }
+
+////////////////////////////////////////////////////////////////
+// Setters
+////////////////////////////////////////////////////////////////
+
+  public void setTotalDevices(double v) { setDouble("totalDevices", v); }
+  public void setDevicesDown(double v) { setDouble("devicesDown", v); }
+  public void setOperationalDevices(double v) { setDouble("operationalDevices", v); }
+
+////////////////////////////////////////////////////////////////
+// Program Source
+////////////////////////////////////////////////////////////////
+
+    ////////////////////////////////////////////////////////////////
+    // Properties
+    ////////////////////////////////////////////////////////////////
+    private Clock.Ticket ticket;
+  
+    ////////////////////////////////////////////////////////////////
+    // Lifecycle Methods
+    ////////////////////////////////////////////////////////////////
+    public void onStart() throws Exception
+    {
+      // Start the timer and execute immediately
+      updateTimer();
+      onExecute();
+    }
+  
+    public void onStop() throws Exception
+    {
+      if (ticket != null) {
+        ticket.cancel();
+        ticket = null;
+      }
+    }
+  
+    ////////////////////////////////////////////////////////////////
+    // Timer Methods
+    ////////////////////////////////////////////////////////////////
+    void updateTimer()
+    {
+      if (ticket != null) ticket.cancel();
+      
+      // Use 10 minute intervals (300000 ms) - schedule to call onExecute
+      ticket = Clock.schedule(getComponent(), BRelTime.make(300000), BProgram.execute, null);
+    }
+  
+    ////////////////////////////////////////////////////////////////
+    // Program Source
+    ////////////////////////////////////////////////////////////////
+    public void onExecute() throws Exception
+    {
+      // Reschedule the timer for next execution
+      updateTimer();
+      
+      try 
+      {
+        // Query 1: Total  devices (handle null result)
+        double totalCount = 0; // Default to 0
+        try {
+          BOrd ordTotal = BOrd.make("station:|slot:/Drivers/BacnetNetwork|bql:select count(*) from bacnet:BacnetDevice|cell:0,0");
+          Object totalResult = ordTotal.get(Sys.getStation());
+          
+          if (totalResult != null) {
+            String formattedTotalResult = BFormat.format("%.%", totalResult);
+            totalCount = parseToDouble(formattedTotalResult, "Total  Count");
+          }
+          
+        } catch (IndexOutOfBoundsException e) {
+          System.out.println("No  devices found (null result), setting total count to 0");
+          totalCount = 0;
+        }
+        
+        // Query 2:  devices that are down (handle null result)
+        double downCount = 0; // Default to 0
+        try {
+          BOrd ordDown = BOrd.make("station:|slot:/Drivers/BacnetNetwork|bql:select count(status) from bacnet:BacnetDevice where status.down = true or status.fault = true or status.disabled = true|cell:0,0");
+          Object downResult = ordDown.get(Sys.getStation());
+          
+          if (downResult != null) {
+            String formattedDownResult = BFormat.format("%.%", downResult);
+            downCount = parseToDouble(formattedDownResult, "Down  Count");
+          }
+          
+        } catch (IndexOutOfBoundsException e) {
+          System.out.println("No down devices found (null result), setting count to 0");
+          downCount = 0;
+        }
+        
+        // Calculate operational devices - THIS MATH IS CORRECT
+        double operationalCount = totalCount - downCount;
+        
+        // Debug output
+        System.out.println("Total  devices: " + totalCount);
+        System.out.println("Down  devices: " + downCount);
+        System.out.println("Operational  devices: " + operationalCount);
+        
+        // Set all output properties
+        setTotalDevices(totalCount);
+        setDevicesDown(downCount);
+        setOperationalDevices(operationalCount);
+        
+      } catch (Exception e) {
+        System.out.println("Error: " + e.getMessage());
+        e.printStackTrace();
+      }
+    }
+    
+    private double parseToDouble(String value, String label) throws Exception
+    {
+      try
+      {
+        return Double.parseDouble(value);
+      } catch (NumberFormatException e)
+      {
+        throw new Exception("Failed to parse " + label + " as a number: " + value, e);
+      } 
+    }
+}
