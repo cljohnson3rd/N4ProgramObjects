@@ -1,0 +1,90 @@
+/* Auto-generated ProgramImpl Code */
+
+import java.util.*;              /* java Predefined*/
+import javax.baja.nre.util.*;    /* nre Predefined*/
+import javax.baja.sys.*;         /* baja Predefined*/
+import javax.baja.status.*;      /* baja Predefined*/
+import javax.baja.util.*;        /* baja Predefined*/
+import com.tridium.program.*;    /* program-rt Predefined*/
+import javax.baja.file.*;        /* baja User Defined*/
+import java.io.*;                /* java User Defined*/
+import com.tridium.modbusAsync.*; /* modbusAsync-rt User Defined*/
+import javax.baja.naming.*;      /* baja By Property*/
+
+public class ProgramImpl
+  extends com.tridium.program.ProgramBase
+{
+
+////////////////////////////////////////////////////////////////
+// Getters
+////////////////////////////////////////////////////////////////
+
+  public BOrd getFileOrd() { return (BOrd)get("fileOrd"); }
+
+////////////////////////////////////////////////////////////////
+// Setters
+////////////////////////////////////////////////////////////////
+
+  public void setFileOrd(javax.baja.naming.BOrd v) { set("fileOrd", v); }
+
+////////////////////////////////////////////////////////////////
+// Program Source
+////////////////////////////////////////////////////////////////
+
+  public void onExecute() throws Exception
+  {
+    // Resolve the BOrd reference to a file, cast it to BIFile, and open an input stream reader for its contents.
+    // Assumes this is a CSV file that contains device information (name, address).
+    BIFile file = (BIFile) getFileOrd().getOrd().resolve().get();
+    
+    // Create an InputStreamReader to read the file contents as character data
+    InputStreamReader reader = new InputStreamReader(file.getInputStream());
+    
+    // Read all lines from the CSV file into a string array.
+    // Each element in the array represents one row from the CSV file
+    String[] rows = FileUtil.readLines(reader);
+  
+    // Resolve the ModbuAsyncNetwork driver component from the station's component space.
+    // This is the parent container for all ModbusAsync Devices to be added.
+    // The BOrd path points to the network driver in the station's component tree    
+    BModbusAsyncNetwork modbusAsyncNetwork = (BModbusAsyncNetwork) BOrd.make("station:|slot:/Drivers/ModbusAsyncNetwork").resolve().get();
+    
+    // Loop through each row in the CSV (skipping the first row, assuming it's a header).
+    // Starting at index 1 to skip the header row that typically contains column names    
+    for (int i = 1; i < rows.length; i++)
+    {
+      // Split each line by comma, trimming whitespace from each field
+      // Expected CSV format: "Device Name, Device Address"
+      // Example: "Pump Controller 1, 5" where 5 is the Modbus device address    
+      String[] properties = TextUtil.splitAndTrim(rows[i], ',');
+      
+      // Extract the device name from the first column
+      // This will be used as both the display name and the slot name in the component tree
+      String name = properties[0]; //device name
+      
+      // Extract the Modbus device address from the second column
+      // This numeric address identifies the device on the Modbus network
+      String mbdeviceAddress = properties[1]; //device address
+      
+      // Construct BOrd reference path for where the ModbusAsync Device will reside in the component tree
+      // The device will be placed under the ModbusAsyncNetwork using the device name as the slot identifier
+      BOrd deviceOrd = BOrd.make("station:|slot:/Drivers/ModbusAsyncNetwork/" + name);
+       
+      // Create a new instance of BModbusAsyncDevice 
+      // This represents a single Modbus device that will communicate over the network
+      BModbusAsyncDevice device = new BModbusAsyncDevice();
+      
+      // Add the new device instance to the ModbusAsyncNetwork using the device name as the slot.
+      // This registers the device in the network's component hierarchy       
+      modbusAsyncNetwork.add(name, device);
+      
+      // Re-resolve the device from its BOrd path to get the properly initialized instance
+      // This ensures we have the device as it exists in the component tree after being added
+      device = (BModbusAsyncDevice) deviceOrd.resolve().get();
+      
+      // Configure the device's Modbus address by parsing the string value to an integer
+      // This address must be unique on the Modbus network and match the physical device's configuration
+      device.setDeviceAddress(Integer.parseInt(mbdeviceAddress));
+    }
+  }
+}
