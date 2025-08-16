@@ -1,0 +1,74 @@
+/* Auto-generated ProgramImpl Code */
+
+import java.util.*;              /* java Predefined*/
+import javax.baja.nre.util.*;    /* nre Predefined*/
+import javax.baja.sys.*;         /* baja Predefined*/
+import javax.baja.status.*;      /* baja Predefined*/
+import javax.baja.util.*;        /* baja Predefined*/
+import com.tridium.program.*;    /* program-rt Predefined*/
+import javax.baja.naming.*;      /* baja User Defined*/
+import javax.baja.file.*;        /* baja User Defined*/
+import java.io.*;                /* java User Defined*/
+import com.tridium.modbusTcp.*;  /* modbusTcp-rt User Defined*/
+
+public class ProgramImpl
+  extends com.tridium.program.ProgramBase
+{
+
+////////////////////////////////////////////////////////////////
+// Getters
+////////////////////////////////////////////////////////////////
+
+  public BOrd getFileOrd() { return (BOrd)get("fileOrd"); }
+
+////////////////////////////////////////////////////////////////
+// Setters
+////////////////////////////////////////////////////////////////
+
+  public void setFileOrd(javax.baja.naming.BOrd v) { set("fileOrd", v); }
+
+////////////////////////////////////////////////////////////////
+// Program Source
+////////////////////////////////////////////////////////////////
+
+  public void onExecute() throws Exception
+  {
+      // Resolve the BOrd reference to a file, cast it to BIFile, and open an input stream reader for its contents.
+      // Assumes this is a CSV file that contains station information (name, address).
+      BIFile file = (BIFile) getFileOrd().getOrd().resolve().get();
+      InputStreamReader reader = new InputStreamReader(file.getInputStream());
+  
+      // Read all lines from the CSV file into a string array.
+      String[] rows = FileUtil.readLines(reader);
+  
+      // Resolve the ModbuTcpNetwork driver component from the station's component space.
+      // This is the parent container for all ModbusTcp Devices to be added.
+      BModbusTcpNetwork modbusTcpNetwork = (BModbusTcpNetwork) BOrd.make("station:|slot:/Drivers/ModbusTcpNetwork").resolve().get();
+  
+      // Loop through each row in the CSV (skipping the first row, assuming it's a header).
+      for (int i = 1; i < rows.length; i++) 
+      {
+          // Split each line by comma, trimming whitespace. Expected format: Name,Device Address, IPAddress
+          String[] properties = TextUtil.splitAndTrim(rows[i], ',');
+          String name = properties[0];     // Device Name
+          String mbdeviceAddress = properties[1]; //Device Address
+          String ipAddress = properties[2];  // IP address of the station
+  
+          // Construct BOrd references for where the ModbusTcp Device will reside and how it will connect.
+          BOrd deviceOrd = BOrd.make("station:|slot:/Drivers/ModbusTcpNetwork/" + name);
+          
+          // Add a new instance of BModbusTcpDevice to the ModbusTcpNetwork using the station name as the slot.
+          modbusTcpNetwork.add(name, new BModbusTcpDevice());
+  
+          // Resolve the newly added station component by its BOrd.
+          BModbusTcpDevice device = (BModbusTcpDevice) deviceOrd.resolve().get();
+          
+          // Set the Device Address of the ModbusTcpDevice
+          device.setDeviceAddress(Integer.parseInt(mbdeviceAddress));
+          
+          // Set the IP address of the ModbusTcpDevice so it knows how to communicate.
+          device.setIpAddress(ipAddress);
+  
+      }
+  }
+}
