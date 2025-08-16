@@ -1,0 +1,309 @@
+/* Auto-generated ProgramImpl Code */
+
+import java.util.*;              /* java Predefined*/
+import javax.baja.nre.util.*;    /* nre Predefined*/
+import javax.baja.sys.*;         /* baja Predefined*/
+import javax.baja.status.*;      /* baja Predefined*/
+import javax.baja.util.*;        /* baja Predefined*/
+import com.tridium.program.*;    /* program-rt Predefined*/
+import com.tridium.platform.*;   /* platform-rt User Defined*/
+import com.tridium.platform.tcpip.*; /* platform-rt User Defined*/
+
+public class ProgramImpl
+  extends com.tridium.program.ProgramBase
+{
+
+////////////////////////////////////////////////////////////////
+// Getters
+////////////////////////////////////////////////////////////////
+
+  public String getStationName() { return getString("stationName"); }
+  public String getHostId() { return getString("hostId"); }
+  public String getGateway() { return getString("gateway"); }
+  public String getPort1IpAddress() { return getString("port1IpAddress"); }
+  public String getPort1SubnetMask() { return getString("port1SubnetMask"); }
+  public String getPort1MacAddress() { return getString("port1MacAddress"); }
+  public String getPort2IpAddress() { return getString("port2IpAddress"); }
+  public String getPort2SubnetMask() { return getString("port2SubnetMask"); }
+  public String getPort2MacAddress() { return getString("port2MacAddress"); }
+  public String getCurrentCpu() { return getString("currentCpu"); }
+  public String getOverallCpu() { return getString("overallCpu"); }
+  public String getNiagaraVersion() { return getString("niagaraVersion"); }
+  public String getTotalPhysicalMemory() { return getString("totalPhysicalMemory"); }
+  public String getFreeMemory() { return getString("freeMemory"); }
+  public String getJvmName() { return getString("jvmName"); }
+  public String getJvmVendor() { return getString("jvmVendor"); }
+  public String getJvmVersion() { return getString("jvmVersion"); }
+  public String getOsArch() { return getString("osArch"); }
+  public String getOsName() { return getString("osName"); }
+  public String getOsVersion() { return getString("osVersion"); }
+
+////////////////////////////////////////////////////////////////
+// Setters
+////////////////////////////////////////////////////////////////
+
+  public void setStationName(String v) { setString("stationName", v); }
+  public void setHostId(String v) { setString("hostId", v); }
+  public void setGateway(String v) { setString("gateway", v); }
+  public void setPort1IpAddress(String v) { setString("port1IpAddress", v); }
+  public void setPort1SubnetMask(String v) { setString("port1SubnetMask", v); }
+  public void setPort1MacAddress(String v) { setString("port1MacAddress", v); }
+  public void setPort2IpAddress(String v) { setString("port2IpAddress", v); }
+  public void setPort2SubnetMask(String v) { setString("port2SubnetMask", v); }
+  public void setPort2MacAddress(String v) { setString("port2MacAddress", v); }
+  public void setCurrentCpu(String v) { setString("currentCpu", v); }
+  public void setOverallCpu(String v) { setString("overallCpu", v); }
+  public void setNiagaraVersion(String v) { setString("niagaraVersion", v); }
+  public void setTotalPhysicalMemory(String v) { setString("totalPhysicalMemory", v); }
+  public void setFreeMemory(String v) { setString("freeMemory", v); }
+  public void setJvmName(String v) { setString("jvmName", v); }
+  public void setJvmVendor(String v) { setString("jvmVendor", v); }
+  public void setJvmVersion(String v) { setString("jvmVersion", v); }
+  public void setOsArch(String v) { setString("osArch", v); }
+  public void setOsName(String v) { setString("osName", v); }
+  public void setOsVersion(String v) { setString("osVersion", v); }
+
+////////////////////////////////////////////////////////////////
+// Program Source
+////////////////////////////////////////////////////////////////
+
+  ////////////////////////////////////////////////////////////////
+  // JACE/Edge System Information Collection Program
+  // 
+  // This program automatically collects and updates system information
+  // from a JACE or JENEsys Edge controller including:
+  // - Network configuration (dual ports)
+  // - System performance metrics
+  // - Hardware and software details
+  //
+  // The program runs continuously, updating information every 5 seconds
+  ////////////////////////////////////////////////////////////////
+  
+     // Timer ticket for scheduling periodic updates
+     Clock.Ticket ticket;
+     
+     /**
+      * Called when the program starts
+      * Performs initial data collection and starts the update timer
+      */
+     public void onStart() throws Exception {
+        // Collect system information immediately when program starts
+        setProperties();
+        
+        // Start the periodic update timer
+        updateTimer();
+     }
+     
+     /**
+      * Called every time the scheduled timer fires (every 5 seconds)
+      * Reschedules the next execution and updates system properties
+      */
+     public void onExecute() throws Exception {
+        // Schedule the next execution cycle
+        updateTimer();
+        
+        // Update all system properties with current information
+        setProperties();
+     }
+     
+     /**
+      * Called when the program is stopped
+      * Performs cleanup by canceling the timer
+      */
+     public void onStop() throws Exception {
+        // Cancel the timer to prevent further executions
+        if (ticket != null) ticket.cancel();
+     }
+     
+     /**
+      * Manages the periodic execution timer
+      * Cancels any existing timer and schedules a new execution in 5 seconds
+      */
+     void updateTimer() {
+        // Cancel existing timer if one is running
+        if (ticket != null) ticket.cancel();
+        
+        // Schedule next execution of onExecute() in 5000ms (5 seconds)
+        // BProgram.execute tells Niagara to call onExecute() when timer fires
+        ticket = Clock.schedule(getComponent(), BRelTime.make(5000), BProgram.execute, null);
+     }
+      
+     /**
+      * Main method that collects all system information
+      * Gathers network settings, system performance, and hardware details
+      */
+     public void setProperties() {
+        // === SERVICE DISCOVERY ===
+        // Navigate the Niagara service tree to find required services
+        BComponent services = (BComponent)Sys.getStation().get("Services");
+        BComponent platformServices = (BComponent)services.get("PlatformServices");
+        BSystemPlatformService systemService = (BSystemPlatformService)platformServices.get("SystemService");
+        
+        // === NETWORK ADAPTER DISCOVERY ===
+        // Get network adapter objects for both physical ports
+        // Note: Interface names vary by JACE model:
+        // - JACE 8000/9000: "en0", "en1" 
+        // - Other models may use "eth0", "eth1" or "dm0", "dm1"
+        BTcpIpAdapterSettings port1Adapter = getAdapter("eth0");
+        BTcpIpAdapterSettings port2Adapter = getAdapter("eth1");
+        
+        // Get host-level network settings (contains gateway for single-gateway models)
+        BTcpIpHostSettings tcpIpHostSettings = getHostSettings();
+        
+        // === BASIC SYSTEM INFORMATION ===
+        // Station name is the user-defined name for this JACE
+        setStationName(Sys.getStation().getStationName());
+        
+        // Host ID is a unique identifier for this JACE hardware
+        setHostId(Sys.getHostId());
+        
+        // Gateway setting (for models with single system-wide gateway)
+        setGateway(tcpIpHostSettings != null ? tcpIpHostSettings.getDefaultGateway() : "");
+        
+        // === PORT 1 NETWORK CONFIGURATION ===
+        if (port1Adapter != null) {
+           // MAC address is always available (hardware-based identifier)
+           setPort1MacAddress(port1Adapter.getMediaAccessControlAddress());
+           
+           // Check if this network adapter is enabled in configuration
+           if (port1Adapter.getIsAdapterEnabled()) {
+              // Adapter is enabled - get IP configuration
+              setPort1IpAddress(port1Adapter.getIpAddress());
+              setPort1SubnetMask(port1Adapter.getSubnetMask());
+           } else {
+              // Adapter is disabled - show status instead of empty values
+              setPort1IpAddress("disabled");
+              setPort1SubnetMask("disabled");
+           }
+        } else {
+           // No adapter found - clear all port 1 values
+           setPort1IpAddress("No Adapter Found");
+           setPort1MacAddress("No Adapter Found");
+           setPort1SubnetMask("No Adapter Found");
+        }
+        
+        // === PORT 2 NETWORK CONFIGURATION ===
+        // Same logic as Port 1, but for the second network interface
+        if (port2Adapter != null) {
+           setPort2MacAddress(port2Adapter.getMediaAccessControlAddress());
+           
+           if (port2Adapter.getIsAdapterEnabled()) {
+              setPort2IpAddress(port2Adapter.getIpAddress());
+              setPort2SubnetMask(port2Adapter.getSubnetMask());
+           } else {
+              setPort2IpAddress("disabled");
+              setPort2SubnetMask("disabled");
+           }
+        } else {
+           // No adapter found - clear all port 2 values
+           setPort2IpAddress("No Adapter Found");
+           setPort2MacAddress("No Adapter Found");
+           setPort2SubnetMask("No Adapter Found");
+        }
+        
+        // === SYSTEM PERFORMANCE AND DETAILS ===
+        if (systemService != null) {
+           // CPU Usage Metrics
+           setCurrentCpu(String.valueOf(systemService.getCurrentCpuUsage()));    // Current CPU load
+           setOverallCpu(String.valueOf(systemService.getOverallCpuUsage()));    // Average CPU load
+           
+           // Software Information  
+           setNiagaraVersion(systemService.getNiagaraVersion());                 // Niagara Framework version
+           
+           // Memory Information
+           setTotalPhysicalMemory(String.valueOf(systemService.getTotalPhysicalMemory()));  // Total RAM
+           setFreeMemory(String.valueOf(systemService.getFreePhysicalMemory()));           // Available RAM
+           
+           // Java Virtual Machine Details
+           setJvmName(systemService.getJavaVmName());                            // JVM implementation name
+           setJvmVendor(systemService.getJavaVmVendor());                        // JVM vendor (Oracle, etc.)
+           setJvmVersion(systemService.getJavaVmVersion());                      // Java version
+           
+           // Operating System Information
+           setOsArch(systemService.getOsArch());                                 // CPU architecture (x86, ARM, etc.)
+           setOsName(systemService.getOsName());                                 // Operating system name
+           setOsVersion(systemService.getOsVersion());                           // OS version number
+        }
+     }
+      
+     /**
+      * Helper method to retrieve a specific network adapter by interface name
+      * 
+      * @param interfaceName The name of the network interface (e.g., "eth0", "en0")
+      * @return BTcpIpAdapterSettings object for the interface, or null if not found
+      */
+     BTcpIpAdapterSettings getAdapter(String interfaceName) {
+        BTcpIpAdapterSettings portAdapter = null;
+        
+        // Get the TCP/IP platform service that manages network configuration
+        BTcpIpPlatformService tcpIpPlatformService = (BTcpIpPlatformService)Sys.getService(BTcpIpPlatformService.TYPE);
+        
+        if (tcpIpPlatformService != null) {
+           // Ensure network configuration is loaded from system
+           tcpIpPlatformService.checkPropertiesLoaded();
+           
+           // Lease the service for 4 seconds to prevent it from being unloaded
+           tcpIpPlatformService.lease(4);
+           
+           // Retrieve the specific adapter by name from the adapters collection
+           portAdapter = (BTcpIpAdapterSettings)tcpIpPlatformService.getSettings().getAdapters().get(interfaceName);
+        }
+        
+        return portAdapter;
+     }
+      
+     /**
+      * Helper method to retrieve host-level TCP/IP settings
+      * Contains system-wide network configuration like default gateway
+      * 
+      * @return BTcpIpHostSettings object, or null if not available
+      */
+     BTcpIpHostSettings getHostSettings() {
+        BTcpIpHostSettings tcpIpHostSettings = null;
+        
+        // Get the TCP/IP platform service
+        BTcpIpPlatformService tcpIpPlatformService = (BTcpIpPlatformService)Sys.getService(BTcpIpPlatformService.TYPE);
+        
+        if (tcpIpPlatformService != null) {
+           // Ensure configuration is loaded
+           tcpIpPlatformService.checkPropertiesLoaded();
+           
+           // Lease the service temporarily
+           tcpIpPlatformService.lease(4);
+           
+           // Get the host-level settings (contains gateway and other system-wide config)
+           tcpIpHostSettings = tcpIpPlatformService.getSettings();
+        }
+        
+        return tcpIpHostSettings;
+     }
+  
+  ////////////////////////////////////////////////////////////////
+  // EDUCATIONAL NOTES FOR STUDENTS:
+  //
+  // 1. TIMER PATTERN: This program uses Niagara's Clock.schedule() method
+  //    for periodic execution rather than polling interfaces. This is the
+  //    correct approach for Program Objects.
+  //
+  // 2. SERVICE NAVIGATION: Niagara organizes services in a tree structure.
+  //    We navigate: Station -> Services -> PlatformServices -> SystemService
+  //
+  // 3. NETWORK INTERFACES: Different JACE models use different interface names:
+  //    - JACE 8000/9000: en0, en1
+  //    - Older models: eth0, eth1 or dm0, dm1
+  //    Always verify the correct names for your target hardware.
+  //
+  // 4. ERROR HANDLING: The code uses null checks rather than try/catch blocks
+  //    because Niagara APIs typically return null for missing services rather
+  //    than throwing exceptions.
+  //
+  // 5. RESOURCE MANAGEMENT: The lease() calls prevent services from being
+  //    unloaded while we're using them. This is important in embedded systems
+  //    where memory management is critical.
+  //
+  // 6. GATEWAY ARCHITECTURE: 
+  //    - Some JACE models have one system-wide gateway (use getHostSettings())
+  //    - Others have per-port gateways (use adapter.getDefaultGateway())
+  //    Consult your hardware documentation for the correct approach.
+  ////////////////////////////////////////////////////////////////
+}
