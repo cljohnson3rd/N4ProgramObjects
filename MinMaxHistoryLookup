@@ -1,0 +1,87 @@
+/* Auto-generated ProgramImpl Code */
+
+import java.util.*;              /* java Predefined*/
+import javax.baja.nre.util.*;    /* nre Predefined*/
+import javax.baja.sys.*;         /* baja Predefined*/
+import javax.baja.status.*;      /* baja Predefined*/
+import javax.baja.util.*;        /* baja Predefined*/
+import com.tridium.program.*;    /* program-rt Predefined*/
+import javax.baja.history.*;     /* history-rt User Defined*/
+import javax.baja.collection.*;  /* baja User Defined*/
+import javax.baja.naming.*;      /* baja By Property*/
+
+public class ProgramImpl
+  extends com.tridium.program.ProgramBase
+{
+
+////////////////////////////////////////////////////////////////
+// Getters
+////////////////////////////////////////////////////////////////
+
+  public BOrd getHistoryOrd() { return (BOrd)get("historyOrd"); }
+  public BStatusEnum getTimeRange() { return (BStatusEnum)get("timeRange"); }
+  public double getMinValue() { return getDouble("minValue"); }
+  public double getMaxValue() { return getDouble("maxValue"); }
+
+////////////////////////////////////////////////////////////////
+// Setters
+////////////////////////////////////////////////////////////////
+
+  public void setHistoryOrd(javax.baja.naming.BOrd v) { set("historyOrd", v); }
+  public void setTimeRange(javax.baja.status.BStatusEnum v) { set("timeRange", v); }
+  public void setMinValue(double v) { setDouble("minValue", v); }
+  public void setMaxValue(double v) { setDouble("maxValue", v); }
+
+////////////////////////////////////////////////////////////////
+// Program Source
+////////////////////////////////////////////////////////////////
+
+  public void progress(String msg) {
+      System.out.println("[DEBUG] " + msg);
+  }
+  
+  public void onExecute() throws Exception {
+      progress("Starting execution...");
+  
+      BOrd baseOrd = getHistoryOrd();
+      if (baseOrd == null) {
+          progress("History ORD is not set.");
+          return;
+      }
+  
+      String range = getTimeRange().getValue().getTag().toLowerCase();
+      progress("Using time range: " + range);
+  
+      String bqlOrdString = baseOrd.toString() +
+          "?period=" + range + "|bql:select min(value), max(value)";
+      progress("Constructed BQL ORD: " + bqlOrdString);
+  
+      BOrd bqlOrd = BOrd.make(bqlOrdString);
+      BITable table;
+  
+      try {
+          table = (BITable) bqlOrd.resolve().get();
+          progress("BQL resolved successfully.");
+      } catch (Exception e) {
+          progress("Failed to resolve BQL ORD: " + e.getMessage());
+          return;
+      }
+  
+      ColumnList columns = table.getColumns();
+      Column minCol = columns.get(0);  // min(value)
+      Column maxCol = columns.get(1);  // max(value)
+  
+      TableCursor cursor = table.cursor();
+      if (cursor.next()) {
+          double min = ((BNumber) cursor.cell(minCol)).getDouble();
+          double max = ((BNumber) cursor.cell(maxCol)).getDouble();
+  
+          progress("Min: " + min + ", Max: " + max);
+  
+          setMinValue(min);
+          setMaxValue(max);
+      } else {
+          progress("No data returned from BQL query.");
+      }
+  }
+}
